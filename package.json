@@ -1,0 +1,80 @@
+{
+  "name": "mocks-to-msw",
+  "version": "0.0.0",
+  "description": "An adapter that provides mocks generated from the har-to-mocks to the MSW.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "generate-mocks": "./dist/generate-mocks.js"
+  },
+  "files": [
+    "/dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.cjs",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "dev": "bun test --watch",
+    "build": "bun scripts/build.ts",
+    "lint": "bun check && oxlint --type-aware --deny-warnings src scripts",
+    "format": "bun fmt",
+    "format:check": "bun fmt --check",
+    "test": "bun test --coverage",
+    "test:ci": "bun test --coverage"
+  },
+  "author": "Peter Knezek @peterknezek",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/peterknezek/mocks-to-msw.git"
+  },
+  "bugs": {
+    "url": "https://github.com/peterknezek/mocks-to-msw/issues"
+  },
+  "homepage": "https://github.com/peterknezek/mocks-to-msw#readme",
+  "keywords": [
+    "mock",
+    "api",
+    "front-end",
+    "handler",
+    "har",
+    "mocking",
+    "mocks",
+    "msw",
+    "har-to-mocks",
+    "typescript"
+  ],
+  "peerDependencies": {
+    "msw": ">=2"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "oxlint": "^1.89.0",
+    "oxlint-tsgolint": "^7.0.2005",
+    "typescript": "^7.0.2"
+  },
+  "release": {
+    "branches": [
+      "main"
+    ],
+    "plugins": [
+      "@semantic-release/commit-analyzer",
+      "@semantic-release/release-notes-generator",
+      [
+        "@semantic-release/exec",
+        {
+          "verifyConditionsCmd": "bun pm whoami",
+          "prepareCmd": "bun pm pkg set version=${nextRelease.version}",
+          "publishCmd": "bun publish"
+        }
+      ],
+      "@semantic-release/github"
+    ]
+  }
+}
