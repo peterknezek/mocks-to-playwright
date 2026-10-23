@@ -22,11 +22,12 @@
   "scripts": {
     "dev": "bun test --watch",
     "build": "bun scripts/build.ts",
-    "lint": "bun check && oxlint --type-aware --deny-warnings src scripts",
+    "lint": "bun check && oxlint --type-aware --deny-warnings src scripts e2e playwright.config.ts",
     "format": "bun fmt",
     "format:check": "bun fmt --check",
-    "test": "bun test --coverage",
-    "test:ci": "bun test --coverage"
+    "test": "bun test --coverage && playwright test",
+    "test:ci": "bun test --coverage && playwright test",
+    "test:e2e": "playwright test"
   },
   "author": "Peter Knezek @peterknezek",
   "license": "MIT",

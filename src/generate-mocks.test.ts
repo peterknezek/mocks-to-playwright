@@ -59,6 +59,20 @@ export default mocks;
     expect(fs.readFileSync(output, "utf8")).toContain("import('../api/client/GET.json', { with: { type: 'json' } })");
   });
 
+  it("should match the committed e2e mocks", () => {
+    // Regenerate with: bun src/generate-mocks.ts --folder=e2e/mocks/api --output=e2e/mocks/mocks.ts
+    const folder = path.join(import.meta.dir, "../e2e/mocks");
+    const output = path.join(folder, `.mocks-${process.pid}.ts`);
+    try {
+      const result = generateMocks(`--folder=${path.join(folder, "api")}`, `--output=${output}`);
+
+      expect(result.exitCode).toBe(0);
+      expect(fs.readFileSync(output, "utf8")).toBe(fs.readFileSync(path.join(folder, "mocks.ts"), "utf8"));
+    } finally {
+      fs.rmSync(output, { force: true });
+    }
+  });
+
   it("should exit with the usage when an argument is missing", () => {
     const result = generateMocks(`--folder=${dir}`);
 
