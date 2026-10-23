@@ -39,7 +39,7 @@ const createMocksRequest =
     const getMock = async (route: Route) => {
       const request = route.request();
       // page.route() does not filter by method, so other methods are left to the other routes.
-      // Navigations are left alone too, the same way the MSW worker bypasses them.
+      // Navigations are left alone too, so a page whose URL equals an API path still loads the app.
       if (request.method() !== method || request.isNavigationRequest()) {
         return route.fallback();
       }
