@@ -1,13 +1,14 @@
-import { createMockHandler } from "./index.js";
+import type { Page } from "@playwright/test";
+import { applyMocks, createMockRoutes } from "./index.js";
 
 // Define mock data imports
 const mocks = {
-  "/api/user/GET": import("./GET.json"),
-  "/uniq/POST": import("./GET.json"),
+  "/api/user/GET": import("./GET.json", { with: { type: "json" } }),
+  "/uniq/POST": import("./GET.json", { with: { type: "json" } }),
 } as const;
 
-// Create mock handler with type checking
-const { mock } = createMockHandler({
+// Create mock routes with type checking
+const { mock } = createMockRoutes({
   mocks,
   debug: true,
 });
@@ -19,16 +20,27 @@ interface User {
   email: string;
 }
 
-// Valid mock calls - these will pass type checking
-mock.get<User>("/api/user"); // OK: matches GET method
-mock.post("/uniq"); // OK: matches POST method
+export const playground = async (page: Page) => {
+  // Valid mock calls - these will pass type checking
+  await mock.get<User>("/api/user")(page); // OK: matches GET method
+  await mock.post("/uniq")(page); // OK: matches POST method
 
-// Invalid mock calls - these will show type errors
-// mock.get("/uniq"); // Error: "/uniq" is only for POST
-// mock.post("/api/user"); // Error: "/api/user" is only for GET
+  // Invalid mock calls - these must show type errors
+  // @ts-expect-error "/uniq" is only for POST
+  mock.get("/uniq");
+  // @ts-expect-error "/api/user" is only for GET
+  mock.post("/api/user");
+  // @ts-expect-error "/api/user" has no PUT mock
+  mock.put("/api/user");
+  // @ts-expect-error "/unknown" has no mock at all
+  mock.get("/unknown");
 
-// Example with response modifier
-mock.get<User>("/api/user", (user) => ({
-  ...user,
-  name: user.name.toUpperCase(),
-}));
+  // Example with response modifier
+  await mock.get<User>("/api/user", (user) => ({
+    ...user,
+    name: user.name.toUpperCase(),
+  }))(page);
+
+  // Several mocks at once, registered in order
+  await applyMocks(page, [mock.get("/api/user"), mock.post("/uniq")]);
+};

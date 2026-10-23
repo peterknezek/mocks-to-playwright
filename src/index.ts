@@ -1,7 +1,6 @@
-import { http, HttpResponse } from "msw";
+import type { BrowserContext, Page, Route } from "@playwright/test";
 
-type SupportedMethods = Extract<keyof typeof http, "get" | "post" | "put" | "delete">;
-type Method = Uppercase<SupportedMethods>;
+type Method = "GET" | "POST" | "PUT" | "DELETE";
 type Path = `${string}/${Method}`;
 
 /**
@@ -23,92 +22,103 @@ type ModifierFn<R> = (json: R) => any;
 
 type MockImport = Promise<{ default: any }>;
 
-type MocksRequestReturn = ReturnType<typeof http.get>;
+/**
+ * Registers a mock on a page or a browser context.
+ * @example
+ * ```ts
+ * await mock.get('/api/user')(page)
+ * await mock.get('/api/user')(context)
+ * ```
+ */
+export type MockRoute = (target: Page | BrowserContext) => Promise<void>;
 
 const createMocksRequest =
-  <P extends Path>(options: CreateMockHandlerOptions<P>) =>
-  <Res>(method: Method, pathname: string, modifier?: ModifierFn<Res>) => {
+  <P extends Path>(options: CreateMockRoutesOptions<P>) =>
+  <Res>(method: Method, pathname: string, modifier?: ModifierFn<Res>): MockRoute => {
     const { mocks, debug, origin } = options;
-    const getMock = async () => {
+    const getMock = async (route: Route) => {
+      const request = route.request();
+      // page.route() does not filter by method, so other methods are left to the other routes.
+      // Navigations are left alone too, the same way the MSW worker bypasses them.
+      if (request.method() !== method || request.isNavigationRequest()) {
+        return route.fallback();
+      }
+
+      let json: unknown;
       try {
         const mockPath = `${pathname}/${method}` as P;
         const data = await mocks[mockPath].then((res) => res.default);
         if (debug) {
-          console.info(`[mocks-to-msw] Mock file was loaded. [${method}]: "${pathname}"`);
+          console.info(`[mocks-to-playwright] Mock file was loaded. [${method}]: "${pathname}"`);
         }
-        if (typeof modifier === "function") {
-          return HttpResponse.json(modifier(data));
-        }
-        return HttpResponse.json(data);
+        json = typeof modifier === "function" ? modifier(data) : data;
       } catch (error) {
         if (debug) {
-          console.error(`[mocks-to-msw] Mock file was not found. [${method}]: "${pathname}"`, error);
+          console.error(`[mocks-to-playwright] Mock file was not found. [${method}]: "${pathname}"`, error);
         }
+        return route.fallback();
       }
+      return route.fulfill({ json });
     };
 
     // Construct the URL from the given pathname and domain.
-    const url = ((): string => {
+    const url = ((): { origin?: string; pathname: string } => {
       if (origin) {
         try {
-          return new URL(pathname, origin).href;
+          return new URL(pathname, origin);
         } catch (e) {
           if (debug) {
             console.error(
-              `[mocks-to-msw] Invalid URL. The provided option for a createMockHandler, the URL's origin, has the issue. Values: [origin]: "${origin}" [pathname]: "${pathname}"`,
+              `[mocks-to-playwright] Invalid URL. The provided option for a createMockRoutes, the URL's origin, has the issue. Values: [origin]: "${origin}" [pathname]: "${pathname}"`,
               e
             );
           }
-          return pathname;
         }
       }
-      return pathname;
+      // Without an origin any origin matches; the base only normalizes the pathname the way the browser does.
+      return { pathname: new URL(pathname, "http://localhost").pathname };
     })();
 
-    switch (method) {
-      case "GET":
-        return http.get(url, getMock);
-      case "POST":
-        return http.post(url, getMock);
-      case "PUT":
-        return http.put(url, getMock);
-      case "DELETE":
-        return http.delete(url, getMock);
-      default:
-        throw new Error(`Invalid method: ${String(method satisfies never)}`);
-    }
+    // A predicate rather than a glob, because a glob matches the full URL, query string included.
+    const matchesUrl = (requestUrl: URL) =>
+      requestUrl.pathname === url.pathname && (url.origin === undefined || requestUrl.origin === url.origin);
+
+    return async (target) => {
+      await target.route(matchesUrl, getMock);
+    };
   };
 
 type MockNamespace<P extends Path> = {
   get: <ResponseType = Record<string, any>>(
     uri: MethodToPath<P>["GET"],
     modifier?: ModifierFn<ResponseType>
-  ) => MocksRequestReturn;
+  ) => MockRoute;
   post: <ResponseType = Record<string, any>>(
     uri: MethodToPath<P>["POST"],
     modifier?: ModifierFn<ResponseType>
-  ) => MocksRequestReturn;
+  ) => MockRoute;
   put: <ResponseType = Record<string, any>>(
     uri: MethodToPath<P>["PUT"],
     modifier?: ModifierFn<ResponseType>
-  ) => MocksRequestReturn;
+  ) => MockRoute;
   delete: <ResponseType = Record<string, any>>(
     uri: MethodToPath<P>["DELETE"],
     modifier?: ModifierFn<ResponseType>
-  ) => MocksRequestReturn;
+  ) => MockRoute;
 };
 
-const createMockNamespace = <P extends Path>(options: CreateMockHandlerOptions<P>): MockNamespace<P> => {
+const createMockNamespace = <P extends Path>(options: CreateMockRoutesOptions<P>): MockNamespace<P> => {
   const mocksRequest = createMocksRequest(options);
   return {
     /**
      * Mocks a GET request to the given URI.
      * @param uri The URI to intercept.
      * @param modifier A function that modifies the response data.
+     * @returns A function that registers the mock on a page or a browser context.
      * @example
      * ```ts
-     * mock.get('/api/user')
-     * mock.get('/api/user', (json) => ({ ...json, data: 'modified' }))
+     * await mock.get('/api/user')(page)
+     * await mock.get('/api/user', (json) => ({ ...json, data: 'modified' }))(page)
      * ```
      */
     get: <ResponseType = Record<string, any>>(uri: MethodToPath<P>["GET"], modifier?: ModifierFn<ResponseType>) =>
@@ -117,10 +127,11 @@ const createMockNamespace = <P extends Path>(options: CreateMockHandlerOptions<P
      * Mocks a POST request to the given URI.
      * @param uri The URI to intercept.
      * @param modifier A function that modifies the response data.
+     * @returns A function that registers the mock on a page or a browser context.
      * @example
      * ```ts
-     * mock.post('/api/user')
-     * mock.post('/api/user', (json) => ({ ...json, data: 'modified' }))
+     * await mock.post('/api/user')(page)
+     * await mock.post('/api/user', (json) => ({ ...json, data: 'modified' }))(page)
      * ```
      */
     post: <ResponseType = Record<string, any>>(uri: MethodToPath<P>["POST"], modifier?: ModifierFn<ResponseType>) =>
@@ -129,10 +140,11 @@ const createMockNamespace = <P extends Path>(options: CreateMockHandlerOptions<P
      * Mocks a PUT request to the given URI.
      * @param uri The URI to intercept.
      * @param modifier A function that modifies the response data.
+     * @returns A function that registers the mock on a page or a browser context.
      * @example
      * ```ts
-     * mock.put('/api/user')
-     * mock.put('/api/user', (json) => ({ ...json, data: 'modified' }))
+     * await mock.put('/api/user')(page)
+     * await mock.put('/api/user', (json) => ({ ...json, data: 'modified' }))(page)
      * ```
      */
     put: <ResponseType = Record<string, any>>(uri: MethodToPath<P>["PUT"], modifier?: ModifierFn<ResponseType>) =>
@@ -141,10 +153,11 @@ const createMockNamespace = <P extends Path>(options: CreateMockHandlerOptions<P
      * Mocks a DELETE request to the given URI.
      * @param uri The URI to intercept.
      * @param modifier A function that modifies the response data.
+     * @returns A function that registers the mock on a page or a browser context.
      * @example
      * ```ts
-     * mock.delete('/api/user')
-     * mock.delete('/api/user', (json) => ({ ...json, data: 'modified' }))
+     * await mock.delete('/api/user')(page)
+     * await mock.delete('/api/user', (json) => ({ ...json, data: 'modified' }))(page)
      * ```
      */
     delete: <ResponseType = Record<string, any>>(uri: MethodToPath<P>["DELETE"], modifier?: ModifierFn<ResponseType>) =>
@@ -152,14 +165,14 @@ const createMockNamespace = <P extends Path>(options: CreateMockHandlerOptions<P
   };
 };
 
-interface CreateMockHandlerOptions<Paths extends Path> {
+interface CreateMockRoutesOptions<Paths extends Path> {
   /**
    * A record of mock imports for each path.
    * @example
    * ```ts
    * const mocks = {
-   *   '/api/user/GET': import('./api/user/GET.json'),
-   *   '/api/user/POST': import('./api/user/POST.json'),
+   *   '/api/user/GET': import('./api/user/GET.json', { with: { type: 'json' } }),
+   *   '/api/user/POST': import('./api/user/POST.json', { with: { type: 'json' } }),
    * } as const;
    * ```
    */
@@ -170,35 +183,56 @@ interface CreateMockHandlerOptions<Paths extends Path> {
   debug?: boolean;
   /**
    * Origin of the URL, that is its scheme, its domain and its port.
+   * Without it, requests to any origin are mocked.
    * @example "https://api.example.com"
    */
   origin?: string;
 }
 
 /**
- * Creates a mock handler with the given options.
- * @param options The options to create a mock handler.
+ * Creates mock routes for Playwright with the given options.
+ * @param options The options to create mock routes.
  * @example
  * ```ts
  * const mocks = {
- *   '/api/user/GET': import('./api/user/GET.json'),
- *   '/api/user/POST': import('./api/user/POST.json'),
+ *   '/api/user/GET': import('./api/user/GET.json', { with: { type: 'json' } }),
+ *   '/api/user/POST': import('./api/user/POST.json', { with: { type: 'json' } }),
  * } as const;
  *
- * const { mock } = createMockHandler<keyof typeof mocks>({
+ * const { mock } = createMockRoutes<keyof typeof mocks>({
  *   mocks,
  * });
  * ```
  */
-export const createMockHandler = <P extends Path>(options: CreateMockHandlerOptions<P>) => ({
+export const createMockRoutes = <P extends Path>(options: CreateMockRoutesOptions<P>) => ({
   /**
    * A namespace to intercept and mock HTTP requests.
    *
    * @example
    * ```ts
-   * mock.get('/api')
-   * mock.post('/api/:id', modifier)
+   * await mock.get('/api')(page)
+   * await mock.post('/api/user', modifier)(context)
    * ```
    */
   mock: createMockNamespace(options),
 });
+
+/**
+ * Registers several mocks on a page or a browser context, in the given order.
+ * Playwright checks the route registered last first, so a later mock wins over an earlier one.
+ * @param target The page or the browser context.
+ * @param routes The mocks to register.
+ * @example
+ * ```ts
+ * const defaultMocks = [mock.get('/api/user'), mock.get('/api/user/settings')];
+ *
+ * test.beforeEach(async ({ page }) => {
+ *   await applyMocks(page, defaultMocks);
+ * });
+ * ```
+ */
+export const applyMocks = async (target: Page | BrowserContext, routes: readonly MockRoute[]) => {
+  for (const route of routes) {
+    await route(target);
+  }
+};
