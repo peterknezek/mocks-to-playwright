@@ -81,9 +81,9 @@ Running the generator creates a `mocks.ts` file with all your mock imports:
 ```ts
 // tests/mocks/mocks.ts
 const mocks = {
-  '/client/application/GET': import('./api/client/application/GET.json', { with: { type: 'json' } }),
-  '/client/application/POST': import('./api/client/application/POST.json', { with: { type: 'json' } }),
-  '/client/GET': import('./api/client/GET.json', { with: { type: 'json' } }),
+  "/client/application/GET": import("./api/client/application/GET.json", { with: { type: "json" } }),
+  "/client/application/POST": import("./api/client/application/POST.json", { with: { type: "json" } }),
+  "/client/GET": import("./api/client/GET.json", { with: { type: "json" } }),
 } as const;
 
 export default mocks;
@@ -216,11 +216,11 @@ The integration tests of this package cover a cross-origin GET, a cross-origin P
 
 ### Options
 
-| Option   | Type      | Description                                                                                           |
-| -------- | --------- | ----------------------------------------------------------------------------------------------------- |
+| Option   | Type      | Description                                                                                          |
+| -------- | --------- | ---------------------------------------------------------------------------------------------------- |
 | `mocks`  | `object`  | The generated mocks: `{ "/path/METHOD": import("./path/METHOD.json", { with: { type: "json" } }) }`. |
-| `origin` | `string`  | Optional. Scheme, domain and port of the API, e.g. `"https://api.example.com"`.                       |
-| `debug`  | `boolean` | Optional. Logs every loaded mock and every mock that failed to load.                                  |
+| `origin` | `string`  | Optional. Scheme, domain and port of the API, e.g. `"https://api.example.com"`.                      |
+| `debug`  | `boolean` | Optional. Logs every loaded mock and every mock that failed to load.                                 |
 
 With `debug: true` the logs look like this:
 

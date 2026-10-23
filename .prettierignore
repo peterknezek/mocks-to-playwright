@@ -1,0 +1,2 @@
+# Written by generate-mocks; src/generate-mocks.test.ts checks that it matches the generator output
+e2e/mocks/mocks.ts
